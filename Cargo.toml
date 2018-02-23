@@ -4,7 +4,9 @@ version = "0.1.0"
 authors = ["Sam Lakerveld <darkwater124@gmail.com>"]
 
 [dependencies]
-cairo-rs = "0.3.0"
-config   = "0.8.0"
-gdk      = "0.7.0"
-gtk      = "0.3.0"
+cairo-rs   = "0.3.0"
+config     = "0.8.0"
+gdk        = "0.7.0"
+gtk        = "0.3.0"
+pango      = "0.3.0"
+pangocairo = "0.4.1"
