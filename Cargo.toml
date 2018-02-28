@@ -5,7 +5,6 @@ authors = ["Sam Lakerveld <darkwater124@gmail.com>"]
 
 [dependencies]
 cairo-rs   = "0.3.0"
-config     = "0.8.0"
 gdk        = "0.7.0"
 gtk        = "0.3.0"
 pango      = "0.3.0"

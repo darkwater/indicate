@@ -1,4 +1,4 @@
-#![feature(duration_extras)]
+#![feature(box_syntax, duration_extras, specialization, termination_trait)]
 extern crate cairo;
 extern crate gdk;
 extern crate gtk;
@@ -6,40 +6,22 @@ extern crate pango;
 extern crate pangocairo;
 
 mod color;
-mod config;
+mod error;
+mod state;
 
 use color::Color;
+use error::Error;
 use gdk::prelude::*;
 use gtk::prelude::*;
 use pango::LayoutExt;
+use state::{Progress, State};
 use std::io;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Instant;
 
-struct State {
-    text:     String,
-    font:     String,
-    color:    Color,
-    progress: Progress,
-}
-
-enum Progress {
-    Indeterminate {
-        speed: u32,
-    },
-    Determinate {
-        progress: u64,
-        max:      u64,
-    },
-    None,
-}
-
-fn main() {
-    if gtk::init().is_err() {
-        println!("Failed to initialize GTK.");
-        return;
-    }
+fn main() -> Result<(), Error> {
+    gtk::init()?;
 
     let window = gtk::Window::new(gtk::WindowType::Popup);
 
@@ -60,28 +42,29 @@ fn main() {
     window.move_(x, y);
     window.resize(width, height);
 
-    let mut input = String::with_capacity(64);
-    io::stdin().read_line(&mut input).unwrap();
+    let mut state = State::new().unwrap();
 
-    let state_ = Arc::new(Mutex::new(State {
-        text:    input,
-        font:    format!("Droid Sans Mono {}", res_scale(11)),
-        color:   Color(1.0, 1.0, 1.0, 1.0),
-        progress: Progress::Determinate { progress: 10, max: 100 },
-    }));
+    let mut input = String::with_capacity(64);
+    while state.text == "" {
+        io::stdin().read_line(&mut input).unwrap();
+        state.update(input.parse()?);
+        input.clear();
+    }
+
+    let state_ = Arc::new(Mutex::new(state));
 
     let state = state_.clone();
     thread::spawn(move || {
         let mut input = String::with_capacity(64);
         loop {
-            input.clear();
             match io::stdin().read_line(&mut input) {
                 Ok(_) => {
                     let mut state = state.lock().unwrap();
-                    state.text = input.trim_right().to_string();
+                    state.update(input.parse().unwrap());
                 },
                 Err(e) => panic!("{:?}", e),
             }
+            input.clear();
         }
     });
 
@@ -105,8 +88,10 @@ fn main() {
         let state = state.lock().unwrap();
 
         // text
-        let layout = pangocairo::functions::create_layout(context).unwrap();
-        let font   = pango::FontDescription::from_string(&state.font);
+        let layout   = pangocairo::functions::create_layout(context).unwrap();
+        let mut font = pango::FontDescription::from_string(&state.font);
+        let size     = font.get_size() as f64;
+        font.set_size((size * resolution) as i32);
         layout.set_text(&state.text);
         layout.set_font_description(Some(&font));
 
@@ -126,8 +111,8 @@ fn main() {
         // progress bar
         let bar_height = 2.0 * resolution;
         match state.progress {
-            Progress::Indeterminate { speed } => {
-                let elapsed = start.elapsed() * speed;
+            Progress::Indeterminate => {
+                let elapsed = start.elapsed() * state.indeterminate_speed;
                 let t = elapsed.as_secs() as f64 + elapsed.subsec_millis() as f64 / 1000.0;
                 let a = (t.sin() + 0.15 * (2.0*t).sin()) / 2.2 + 0.5;
                 let Color(r, g, b, _) = state.color;
@@ -136,8 +121,8 @@ fn main() {
                 context.rectangle(0.0, height - bar_height, width, bar_height);
                 context.fill();
             },
-            Progress::Determinate { progress, max } => {
-                let bar_width = progress as f64 / max as f64 * width;
+            Progress::Determinate => {
+                let bar_width = state.progress_current as f64 / state.progress_max as f64 * width;
                 context.rectangle(0.0, height - bar_height, bar_width, bar_height);
                 context.fill();
             },
@@ -169,4 +154,6 @@ fn main() {
     });
 
     gtk::main();
+
+    Ok(())
 }
